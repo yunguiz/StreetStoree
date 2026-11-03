@@ -83,7 +83,7 @@ export async function setBlingToken(accessToken: string, refreshToken?: string):
 }
 
 export async function getBlingProducts(): Promise<{ success: boolean; count: number; products: BlingProduct[] }> {
-  const res = await fetch('/api/bling/products');
+  const res = await fetch('/api/bling/products?all=true');
   const data = await res.json();
   if (!res.ok || !data.success) {
     throw new Error(data.error || 'Falha ao buscar produtos no Bling');
