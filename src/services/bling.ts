@@ -40,67 +40,45 @@ export interface BlingOrder {
   }>;
 }
 
-export async function getBlingStatus(): Promise<BlingStatus> {
-  const res = await fetch('/api/bling/status');
-  if (!res.ok) {
-    throw new Error('Falha ao obter status do Bling');
-  }
-  return res.json();
-}
+// Exemplo de adaptação no bling.ts para buscar produtos com paginação
+export async function getAllBlingProducts(accessToken: string): Promise<BlingProduct[]> {
+  let allProducts: BlingProduct[] = [];
+  let page = 1;
+  let hasMore = true;
+  const limit = 100; // Máximo recomendado por requisição na API v3 do Bling
 
-export async function getBlingAuthUrl(): Promise<{ url: string; redirectUri: string; clientId: string; state: string }> {
-  const res = await fetch('/api/bling/auth-url');
-  if (!res.ok) {
-    throw new Error('Falha ao gerar URL de autorização do Bling');
-  }
-  return res.json();
-}
+  try {
+    while (hasMore) {
+      const response = await fetch(`https://api.bling.com.br/Api/v3/produtos?pagina=${page}&limite=${limit}`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Accept': 'application/json'
+        }
+      });
 
-export async function exchangeBlingCode(code: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch('/api/bling/exchange-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Falha ao autorizar código no Bling');
-  }
-  return data;
-}
+      if (!response.ok) {
+        throw new Error(`Erro ao buscar produtos do Bling: ${response.statusText}`);
+      }
 
-export async function setBlingToken(accessToken: string, refreshToken?: string): Promise<{ success: boolean; message: string }> {
-  const res = await fetch('/api/bling/set-token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ access_token: accessToken, refresh_token: refreshToken })
-  });
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Falha ao configurar token do Bling');
-  }
-  return data;
-}
+      const data = await response.json();
+      const products = data.data || [];
 
-export async function getBlingProducts(): Promise<{ success: boolean; count: number; products: BlingProduct[] }> {
-  const res = await fetch('/api/bling/products?all=true');
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Falha ao buscar produtos no Bling');
-  }
-  return data;
-}
+      if (products.length > 0) {
+        allProducts = [...allProducts, ...products];
+        page++;
+        
+        // Se a quantidade retornada for menor que o limite, chegamos ao fim
+        if (products.length < limit) {
+          hasMore = false;
+        }
+      } else {
+        hasMore = false;
+      }
+    }
 
-export async function getBlingOrders(): Promise<{ success: boolean; count: number; orders: BlingOrder[] }> {
-  const res = await fetch('/api/bling/orders');
-  const data = await res.json();
-  if (!res.ok || !data.success) {
-    throw new Error(data.error || 'Falha ao buscar pedidos no Bling');
+    return allProducts;
+  } catch (error) {
+    console.error("Erro na sincronização completa de produtos do Bling:", error);
+    throw error;
   }
-  return data;
-}
-
-export async function disconnectBling(): Promise<{ success: boolean; message: string }> {
-  const res = await fetch('/api/bling/disconnect', { method: 'POST' });
-  return res.json();
 }
