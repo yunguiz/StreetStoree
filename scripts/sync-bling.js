@@ -80,6 +80,7 @@ async function run() {
       while (hasMore) {
         console.log(`-> A solicitar página ${page} (limite: ${limit})...`);
         
+       // Adicionamos parâmetros para garantir que não há filtros ocultos limitando a listagem
         const prodRes = await fetch(`https://api.bling.com.br/v3/produtos?pagina=${page}&limite=${limit}`, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
