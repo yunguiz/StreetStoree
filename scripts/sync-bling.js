@@ -17,7 +17,6 @@ async function run() {
   let cleanCode = code.trim();
   let accessToken = '';
 
-  // Se o argumento passado já for um token direto ou um código de autorização
   if (cleanCode.length > 50 && !cleanCode.includes('code=')) {
     accessToken = cleanCode;
     console.log('Usando token fornecido diretamente.');
@@ -68,17 +67,19 @@ async function run() {
     }
   }
 
-  // --- ROTINA DE BUSCA DE TODOS OS PRODUTOS (PAGINAÇÃO) ---
+  // --- ROTINA DE BUSCA DE TODOS OS PRODUTOS (PAGINAÇÃO COMPLETA) ---
   if (accessToken) {
-    console.log('📦 Iniciando a importação de todos os produtos do Bling...');
+    console.log('📦 A iniciar a importação de todos os produtos do Bling...');
     
     let allProducts = [];
     let page = 1;
     let hasMore = true;
-    const limit = 100; // Máximo por requisição na API v3 do Bling
+    const limit = 100;
 
     try {
       while (hasMore) {
+        console.log(`-> A solicitar página ${page} (limite: ${limit})...`);
+        
         const prodRes = await fetch(`https://api.bling.com.br/v3/produtos?pagina=${page}&limite=${limit}`, {
           headers: {
             'Authorization': `Bearer ${accessToken}`,
@@ -88,38 +89,42 @@ async function run() {
 
         if (!prodRes.ok) {
           if (prodRes.status === 429) {
-            console.warn('⚠️ Rate limit atingido. Aguardando 2 segundos...');
+            console.warn('⚠️ Rate limit atingido. A aguardar 2 segundos...');
             await new Promise(resolve => setTimeout(resolve, 2000));
             continue;
           }
-          throw new Error(`Erro ao buscar página ${page}: ${prodRes.statusText}`);
+          const errText = await prodRes.text();
+          throw new Error(`Erro ao buscar página ${page} (${prodRes.status}): ${errText}`);
         }
 
         const prodJson = await prodRes.json();
         const products = prodJson.data || [];
 
+        console.log(`-> Recebidos ${products.length} produtos nesta página.`);
+
         if (products.length > 0) {
           allProducts = [...allProducts, ...products];
-          console.log(`-> Página ${page} puxada com sucesso. Acumulado: ${allProducts.length} produtos.`);
-          page++;
-
+          console.log(`✅ Total acumulado até agora: ${allProducts.length} produtos.`);
+          
           if (products.length < limit) {
+            console.log('🏁 Última página atingida (retornou menos itens que o limite).');
             hasMore = false;
+          } else {
+            page++;
           }
 
-          // Delay de segurança para respeitar o limite de requisições por segundo
-          await new Promise(resolve => setTimeout(resolve, 350));
+          await new Promise(resolve => setTimeout(resolve, 400));
         } else {
+          console.log('🏁 Nenhum produto retornado nesta página. Fim da lista.');
           hasMore = false;
         }
       }
 
-      // Salva todos os produtos em um arquivo JSON local para o site consumir
       fs.writeFileSync('bling_catalog_full.json', JSON.stringify(allProducts, null, 2));
-      console.log(`✨ Sincronização concluída com sucesso! Total de ${allProducts.length} produtos salvos em 'bling_catalog_full.json'.`);
+      console.log(`✨ Sincronização concluída com sucesso! Total final de ${allProducts.length} produtos salvos em 'bling_catalog_full.json'.`);
 
     } catch (err) {
-      console.error('Erro ao buscar produtos:', err);
+      console.error('❌ Erro ao buscar produtos:', err);
     }
   }
 }
