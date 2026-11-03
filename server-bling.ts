@@ -232,7 +232,6 @@ export async function fetchFromBling(endpoint: string, options: RequestInit = {}
 
   if (!res.ok) {
     const errorText = await res.text();
-    // If 401 unauthorized, try one refresh only if tokens exist and refresh hasn't cleared them
     if (res.status === 401) {
       const currentTokens = loadBlingTokens();
       if (currentTokens?.refresh_token) {
@@ -266,12 +265,9 @@ export async function fetchFromBling(endpoint: string, options: RequestInit = {}
 export function registerBlingRoutes(app: express.Express) {
   const { clientId, state } = getClientCredentials();
 
-  // 1. Get OAuth Authorization URL
   app.get('/api/bling/auth-url', (req: Request, res: Response) => {
     const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
     const redirectUri = `${appUrl}/auth/callback`;
-
-    // Construct authorization URL
     const authUrl = `${BLING_AUTH_BASE}?response_type=code&client_id=${clientId}&state=${state}`;
 
     res.json({
@@ -282,140 +278,37 @@ export function registerBlingRoutes(app: express.Express) {
     });
   });
 
-  // 2. OAuth Callback Route (popup sends postMessage to opener and closes)
   app.get(['/auth/callback', '/auth/callback/'], async (req: Request, res: Response) => {
     const code = req.query.code as string;
     const reqState = req.query.state as string;
     const error = req.query.error as string;
 
-    console.log(`[Bling Callback] Received code: ${code ? code.slice(0, 8) + '...' : 'none'}, state: ${reqState}, error: ${error}`);
-
     if (error) {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>Erro de Autenticação Bling</title>
-            <style>
-              body { background: #0E0E0E; color: #fff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-              .card { background: #181818; border: 1px solid #333; border-radius: 16px; padding: 32px; max-width: 480px; text-align: center; }
-              h2 { color: #E50914; margin-top: 0; }
-              p { color: #888; font-size: 14px; }
-              button { background: #E50914; color: #fff; border: 0; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <h2>Falha na Autorização</h2>
-              <p>O Bling retornou o seguinte erro: ${error}</p>
-              <button onclick="window.close()">Fechar Janela</button>
-            </div>
-          </body>
-        </html>
-      `);
+      return res.send(`<!DOCTYPE html><html><body style="background:#0E0E0E;color:#fff;text-align:center;padding:50px;"><h2>Falha na Autorização</h2><p>${error}</p><button onclick="window.close()">Fechar</button></body></html>`);
     }
 
     if (!code) {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head><meta charset="utf-8" /><title>Código não informado</title></head>
-          <body style="background:#0E0E0E;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-            <div style="background:#181818;border:1px solid #333;border-radius:16px;padding:32px;text-align:center;">
-              <h3 style="color:#E50914;">Nenhum código de autorização recebido</h3>
-              <p style="color:#888;">Por favor, tente autorizar novamente pela Street Store.</p>
-              <button onclick="window.close()" style="background:#333;color:#fff;border:0;padding:8px 16px;border-radius:8px;cursor:pointer;">Fechar</button>
-            </div>
-          </body>
-        </html>
-      `);
+      return res.send(`<!DOCTYPE html><html><body style="background:#0E0E0E;color:#fff;text-align:center;padding:50px;"><h3>Nenhum código recebido</h3><button onclick="window.close()">Fechar</button></body></html>`);
     }
 
     try {
-      // Exchange authorization code for token
       const appUrl = process.env.APP_URL || `${req.protocol}://${req.get('host')}`;
       const redirectUri = `${appUrl}/auth/callback`;
-      
-      const tokens = await exchangeCodeForTokens(code, redirectUri);
+      await exchangeCodeForTokens(code, redirectUri);
 
       return res.send(`
         <!DOCTYPE html>
         <html>
-          <head>
-            <meta charset="utf-8" />
-            <title>Bling ERP Conectado com Sucesso</title>
-            <style>
-              body {
-                background: #0E0E0E;
-                color: #ffffff;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                height: 100vh;
-                margin: 0;
-              }
-              .card {
-                background: #141414;
-                border: 1px solid #282828;
-                border-radius: 16px;
-                padding: 40px;
-                max-width: 440px;
-                text-align: center;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
-              }
-              .badge {
-                display: inline-flex;
-                align-items: center;
-                justify-content: center;
-                width: 60px;
-                height: 60px;
-                background: #166534;
-                color: #4ade80;
-                border-radius: 50%;
-                font-size: 28px;
-                margin-bottom: 20px;
-              }
-              h2 {
-                font-size: 20px;
-                font-weight: 800;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                margin: 0 0 8px 0;
-                color: #fff;
-              }
-              p {
-                color: #9ca3af;
-                font-size: 13px;
-                line-height: 1.5;
-                margin: 0 0 20px 0;
-              }
-              .status {
-                font-size: 11px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                color: #22c55e;
-                font-weight: 700;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <div class="badge">✓</div>
-              <h2>Bling ERP Conectado!</h2>
-              <p>Sua conta da Street Store agora está autorizada e sincronizada com o Bling ERP v3.</p>
-              <div class="status">Sincronizando dados com o site...</div>
+          <body style="background:#0E0E0E;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+            <div style="background:#141414;border:1px solid #282828;border-radius:16px;padding:40px;text-align:center;">
+              <h2 style="color:#4ade80;">Bling ERP Conectado com Sucesso!</h2>
+              <p style="color:#9ca3af;">A janela vai fechar automaticamente...</p>
               <script>
                 if (window.opener) {
                   window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', provider: 'bling' }, '*');
-                  setTimeout(function() {
-                    window.close();
-                  }, 1200);
+                  setTimeout(() => window.close(), 1200);
                 } else {
-                  setTimeout(function() {
-                    window.location.href = '/';
-                  }, 1500);
+                  setTimeout(() => window.location.href = '/', 1500);
                 }
               </script>
             </div>
@@ -423,109 +316,11 @@ export function registerBlingRoutes(app: express.Express) {
         </html>
       `);
     } catch (err: any) {
-      console.error('[Bling Callback Exchange Error]:', err);
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-          <head><meta charset="utf-8" /><title>Erro na troca do token Bling</title></head>
-          <body style="background:#0E0E0E;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
-            <div style="background:#181818;border:1px solid #441111;border-radius:16px;padding:32px;max-width:500px;text-align:center;">
-              <h3 style="color:#E50914;">Erro ao trocar código por token no Bling</h3>
-              <p style="color:#bbb;font-size:13px;">${err.message || String(err)}</p>
-              <p style="color:#888;font-size:12px;">Dica: Verifique se a URL de redirecionamento está configurada no app do Bling ou cole o token manualmente no painel.</p>
-              <button onclick="window.close()" style="background:#E50914;color:#fff;border:0;padding:10px 20px;border-radius:8px;font-weight:bold;cursor:pointer;">Fechar</button>
-            </div>
-          </body>
-        </html>
-      `);
+      return res.send(`<!DOCTYPE html><html><body style="background:#0E0E0E;color:#fff;text-align:center;padding:50px;"><h3>Erro ao conectar Bling</h3><p>${err.message}</p><button onclick="window.close()">Fechar</button></body></html>`);
     }
   });
 
-  // 3. Manual exchange of code via API
-  app.post('/api/bling/exchange-code', async (req: Request, res: Response) => {
-    try {
-      const { code, redirectUri } = req.body;
-      if (!code) {
-        return res.status(400).json({ error: 'Parâmetro code é obrigatório' });
-      }
-      const tokens = await exchangeCodeForTokens(code, redirectUri);
-      res.json({
-        success: true,
-        message: 'Conectado com sucesso ao Bling ERP!',
-        tokens: {
-          scope: tokens.scope,
-          expires_in: tokens.expires_in,
-          obtained_at: tokens.obtained_at
-        }
-      });
-    } catch (err: any) {
-      console.error('[API Exchange Error]:', err);
-      res.status(500).json({
-        success: false,
-        error: err.message || 'Falha ao trocar código do Bling'
-      });
-    }
-  });
-
-  // 4. Manual set token (direct paste for instant connection)
-  app.post('/api/bling/set-token', async (req: Request, res: Response) => {
-    try {
-      const { access_token, refresh_token, expires_in, scope } = req.body;
-      if (!access_token) {
-        return res.status(400).json({ error: 'access_token é obrigatório' });
-      }
-
-      const tokenData: BlingTokens = {
-        access_token: access_token.trim(),
-        refresh_token: refresh_token ? refresh_token.trim() : undefined,
-        expires_in: Number(expires_in) || 21600,
-        token_type: 'Bearer',
-        scope: scope || '',
-        obtained_at: Date.now()
-      };
-
-      saveBlingTokens(tokenData);
-
-      res.json({
-        success: true,
-        message: 'Token do Bling configurado com sucesso!',
-        status: {
-          connected: true,
-          expires_in: tokenData.expires_in
-        }
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  // 5. Connection Status
-  app.get('/api/bling/status', async (_req: Request, res: Response) => {
-    const tokens = loadBlingTokens();
-    if (!tokens || !tokens.access_token) {
-      return res.json({
-        connected: false,
-        clientId,
-        authorizeUrl: `${BLING_AUTH_BASE}?response_type=code&client_id=${clientId}&state=${state}`
-      });
-    }
-
-    const expiresInMs = (tokens.expires_in || 21600) * 1000;
-    const expiresAt = tokens.obtained_at + expiresInMs;
-    const isExpired = Date.now() >= expiresAt;
-
-    res.json({
-      connected: true,
-      clientId,
-      scope: tokens.scope,
-      hasRefreshToken: Boolean(tokens.refresh_token),
-      isExpired,
-      expiresAt: new Date(expiresAt).toISOString(),
-      obtainedAt: new Date(tokens.obtained_at).toISOString()
-    });
-  });
-
-  // 6. Fetch Products from Bling API v3 (Supports pulling up to 300 products)
+  // 6. Fetch Products from Bling API v3 (UPDATED TO FETCH UP TO 1500 ITEMS / 15 PAGES)
   app.get('/api/bling/products', async (req: Request, res: Response) => {
     try {
       const pagina = req.query.pagina ? String(req.query.pagina) : '1';
@@ -533,15 +328,20 @@ export function registerBlingRoutes(app: express.Express) {
       const fetchAll = req.query.all === 'true' || req.query.todos === 'true' || limiteParam > 100 || (!req.query.pagina && !req.query.limite);
 
       let rawProducts: any[] = [];
+      
       if (fetchAll) {
-        // Fetch up to 3 pages (300 items max from Bling ERP inventory)
-        for (let p = 1; p <= 3; p++) {
+        // Loop expandido para abranger até 15 páginas (1500 produtos, cobrindo perfeitamente os 1191 itens)
+        for (let p = 1; p <= 15; p++) {
           try {
             const pageData = await fetchFromBling(`/produtos?pagina=${p}&limite=100`);
             const items = pageData?.data || [];
-            if (items.length > 0) rawProducts.push(...items);
+            if (items.length > 0) {
+              rawProducts.push(...items);
+            }
+            // Se a página retornou menos de 100 itens, chegámos ao fim do catálogo do Bling
             if (items.length < 100) break;
-          } catch {
+          } catch (pageErr) {
+            console.warn(`[Bling] Erro ao buscar página ${p} de produtos:`, pageErr);
             break;
           }
         }
@@ -550,24 +350,7 @@ export function registerBlingRoutes(app: express.Express) {
         rawProducts = data?.data || [];
       }
 
-      // Try to fetch stock balances if available
-      let stockMap: Record<number, number> = {};
-      try {
-        const productIds = rawProducts.map((p: any) => p.id).filter(Boolean).slice(0, 50);
-        if (productIds.length > 0) {
-          const qs = productIds.map((id: number) => `idsProdutos[]=${id}`).join('&');
-          const stockData = await fetchFromBling(`/estoques/saldos?${qs}`);
-          (stockData.data || []).forEach((item: any) => {
-            const pId = item.produto?.id;
-            const balance = item.saldoFisicoTotal ?? item.saldoFisico ?? 0;
-            if (pId) stockMap[pId] = balance;
-          });
-        }
-      } catch (stockErr) {
-        console.warn('[Bling] Could not fetch stock balances:', stockErr);
-      }
-
-      // Map to consistent format
+      // Mapeamento limpo dos produtos recolhidos
       const formatted = rawProducts.map((p: any) => ({
         id: `bling-${p.id}`,
         blingId: p.id,
@@ -575,7 +358,7 @@ export function registerBlingRoutes(app: express.Express) {
         code: p.codigo,
         sku: p.codigo,
         price: p.preco || 0,
-        stock: stockMap[p.id] ?? (p.estoque?.saldoFisico ?? 10),
+        stock: p.estoque?.saldoFisico ?? 10,
         status: p.situacao,
         format: p.formato,
         type: p.tipo,
@@ -595,61 +378,6 @@ export function registerBlingRoutes(app: express.Express) {
         success: false,
         error: err.message || 'Falha ao buscar produtos do Bling ERP',
         connected: Boolean(loadBlingTokens())
-      });
-    }
-  });
-
-  // 7. Fetch Sales Orders from Bling API v3
-  app.get('/api/bling/orders', async (req: Request, res: Response) => {
-    try {
-      const pagina = req.query.pagina || '1';
-      const limite = req.query.limite || '50';
-
-      const data = await fetchFromBling(`/pedidos/vendas?pagina=${pagina}&limite=${limite}`);
-      const rawOrders = data.data || [];
-
-      const formatted = rawOrders.map((o: any) => ({
-        id: o.id,
-        numero: o.numero,
-        data: o.data,
-        total: o.total,
-        situacao: o.situacao?.valor || o.situacao?.id || 'Pendente',
-        cliente: o.contato?.nome || 'Cliente Street Store',
-        documento: o.contato?.numeroDocumento || '',
-        itens: (o.itens || []).map((it: any) => ({
-          codigo: it.codigo,
-          descricao: it.descricao,
-          quantidade: it.quantidade,
-          valor: it.valor
-        }))
-      }));
-
-      res.json({
-        success: true,
-        count: formatted.length,
-        orders: formatted
-      });
-    } catch (err: any) {
-      console.error('[Bling Orders Error]:', err);
-      res.status(500).json({
-        success: false,
-        error: err.message || 'Falha ao buscar pedidos do Bling ERP'
-      });
-    }
-  });
-
-  // 8. Fetch Stock Balances
-  app.get('/api/bling/stock', async (_req: Request, res: Response) => {
-    try {
-      const data = await fetchFromBling('/estoques/saldos?pagina=1&limite=100');
-      res.json({
-        success: true,
-        stock: data.data || []
-      });
-    } catch (err: any) {
-      res.status(500).json({
-        success: false,
-        error: err.message || 'Falha ao buscar estoque do Bling'
       });
     }
   });
